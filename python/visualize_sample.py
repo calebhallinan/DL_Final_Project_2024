@@ -13,6 +13,9 @@ nii_img1  = nib.load('/Users/calebhallinan/Desktop/jhu/classes/deep_learning/pro
 nii_data1 = nii_img1.get_fdata()
 
 # plot them on top of each other
-plt.imshow(nii_data[:,:,0], cmap='gray', interpolation=None)
-plt.imshow(nii_data1[:,:,1], cmap='jet', interpolation=None, alpha=0.55)
+plt.imshow(nii_data[:,:,8], cmap='gray', interpolation=None)
+plt.imshow(nii_data1[:,:,8], cmap='jet', interpolation=None, alpha=0.55)
+
+
+
 
