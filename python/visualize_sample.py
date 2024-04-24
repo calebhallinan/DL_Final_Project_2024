@@ -21,7 +21,7 @@ nii_data.shape
 
 
 
-
+np.unique(nii_data1)
 
 
 #==================================
