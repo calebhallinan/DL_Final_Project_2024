@@ -120,7 +120,7 @@ print(f'Test Ground truths array shape: {ground_truths_array_test.shape}')
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
 
 class ConvBlock(nn.Module):
@@ -183,6 +183,7 @@ class UNet(nn.Module):
         out = self.classifier(d0)
         return out
 
+
 # Check if CUDA is available and set the device
 device = torch.device("cuda" if torch.cuda.is_available() else "mps")
 
@@ -196,45 +197,85 @@ print(model)
 images_tensor = torch.tensor(images_array_train[:, np.newaxis, ...]).float()
 ground_truths_tensor = torch.tensor(ground_truths_array_train).float()
 
-# Create a TensorDataset and DataLoader
+# Create a TensorDataset
 dataset = TensorDataset(images_tensor, ground_truths_tensor)
-train_loader = DataLoader(dataset, batch_size=16, shuffle=True)
+
+# Split the dataset into training and validation sets
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+# Create DataLoaders for training and validation datasets
+train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
 
 # Define the optimizer and the loss function
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
-# criterion = nn.BCEWithLogitsLoss()
-criterion = nn.CrossEntropyLoss()  # Change the loss function to CrossEntropyLoss
+criterion = nn.CrossEntropyLoss()  # Using CrossEntropyLoss suitable for multi-class segmentation
+
+# Example usage of DataLoader in a training loop could be adjusted as shown in previous messages to handle training and validation phases.
+
 
 # Training loop
-num_epochs = 250
-for epoch in range(num_epochs):
-    model.train()
-    running_loss = 0.0
-    for images, masks in train_loader:
-        # Move tensors to the device
-        images, masks = images.to(device), masks.to(device).long()  # Ensure masks are long integers
+num_epochs = 50
+training_losses = []
+validation_losses = []
 
-        # Zero the parameter gradients
+for epoch in range(num_epochs):
+    # Training phase
+    model.train()
+    train_loss = 0.0
+    for images, masks in train_loader:
+        images, masks = images.to(device), masks.to(device).long()
         optimizer.zero_grad()
-        
-        # Forward pass
         outputs = model(images)
-        
-        # Compute the loss
-        loss = criterion(outputs, masks)  # CrossEntropyLoss takes raw scores, not sigmoid outputs
-        
-        # Backward pass and optimize
+        loss = criterion(outputs, masks)
         loss.backward()
         optimizer.step()
-        
-        running_loss += loss.item()
-
-    print(f'Epoch {epoch+1}/{num_epochs}, Loss: {running_loss/len(train_loader)}')
+        train_loss += loss.item()
+    avg_train_loss = train_loss / len(train_loader)
+    training_losses.append(avg_train_loss)
+    
+    # Validation phase
+    model.eval()
+    val_loss = 0.0
+    with torch.no_grad():
+        for images, masks in val_loader:
+            images, masks = images.to(device), masks.to(device).long()
+            outputs = model(images)
+            loss = criterion(outputs, masks)
+            val_loss += loss.item()
+    avg_val_loss = val_loss / len(val_loader)
+    validation_losses.append(avg_val_loss)
+    
+    print(f'Epoch {epoch+1}/{num_epochs}, Training Loss: {avg_train_loss}, Validation Loss: {avg_val_loss}')
 
 
 ####################################################################################################
 
 ####################################################################################################
+
+
+import matplotlib.pyplot as plt
+
+# plot the training and validation losses over epochs
+plt.figure(figsize=(10, 5))
+plt.plot(training_losses, label='Training Loss')
+plt.plot(validation_losses, label='Validation Loss')
+plt.title('Loss Curve')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+# plt.grid(True)
+plt.show()
+
+
+
+####################################################################################################
+
+####################################################################################################
+
+
 
 ### Evaluate the model on the test set ###
 
