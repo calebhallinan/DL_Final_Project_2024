@@ -115,78 +115,124 @@ print(f'Test Ground truths array shape: {ground_truths_array_test.shape}')
 
 ####################################################################################################
 
-### Create and train a simple CNN ###
+### Create and train an original UNET ###
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
+from torchvision import models
+from torch.nn.functional import relu
 from torch.utils.data import DataLoader, TensorDataset
+import torch.optim as optim
 
-class ConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(ConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
 
-    def forward(self, x):
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
-        return x
 
 class UNet(nn.Module):
-    def __init__(self):
-        super(UNet, self).__init__()
+    def __init__(self, n_class):
+        super().__init__()
         
         # Encoder
-        self.enc_conv0 = ConvBlock(1, 16)
-        self.pool0 = nn.MaxPool2d(2)  # 224 -> 112
-        self.enc_conv1 = ConvBlock(16, 32)
-        self.pool1 = nn.MaxPool2d(2)  # 112 -> 56
-        
-        # Bottleneck
-        self.bottleneck_conv = ConvBlock(32, 64)
-        
-        # Decoder
-        self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)  # 56 -> 112
-        self.dec_conv1 = ConvBlock(64, 32)
-        self.upconv0 = nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2)  # 112 -> 224
-        self.dec_conv0 = ConvBlock(32, 16)
-        
-        # Classifier
-        # self.classifier = nn.Conv2d(16, 1, kernel_size=1)
-        self.classifier = nn.Conv2d(16, 4, kernel_size=1)  # Change the number of output channels to 4
+        # In the encoder, convolutional layers with the Conv2d function are used to extract features from the input image. 
+        # Each block in the encoder consists of two convolutional layers followed by a max-pooling layer, with the exception of the last block which does not include a max-pooling layer.
+        # -------
+        # input: 572x572x3
+        self.e11 = nn.Conv2d(1, 64, kernel_size=3, padding=1) # output: 570x570x64 # CH: changed input channels to 1
+        self.e12 = nn.Conv2d(64, 64, kernel_size=3, padding=1) # output: 568x568x64
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 284x284x64
 
+        # input: 284x284x64
+        self.e21 = nn.Conv2d(64, 128, kernel_size=3, padding=1) # output: 282x282x128
+        self.e22 = nn.Conv2d(128, 128, kernel_size=3, padding=1) # output: 280x280x128
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 140x140x128
+
+        # input: 140x140x128
+        self.e31 = nn.Conv2d(128, 256, kernel_size=3, padding=1) # output: 138x138x256
+        self.e32 = nn.Conv2d(256, 256, kernel_size=3, padding=1) # output: 136x136x256
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 68x68x256
+
+        # input: 68x68x256
+        self.e41 = nn.Conv2d(256, 512, kernel_size=3, padding=1) # output: 66x66x512
+        self.e42 = nn.Conv2d(512, 512, kernel_size=3, padding=1) # output: 64x64x512
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 32x32x512
+
+        # input: 32x32x512
+        self.e51 = nn.Conv2d(512, 1024, kernel_size=3, padding=1) # output: 30x30x1024
+        self.e52 = nn.Conv2d(1024, 1024, kernel_size=3, padding=1) # output: 28x28x1024
+
+
+        # Decoder
+        self.upconv1 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.d11 = nn.Conv2d(1024, 512, kernel_size=3, padding=1)
+        self.d12 = nn.Conv2d(512, 512, kernel_size=3, padding=1)
+
+        self.upconv2 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.d21 = nn.Conv2d(512, 256, kernel_size=3, padding=1)
+        self.d22 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+
+        self.upconv3 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.d31 = nn.Conv2d(256, 128, kernel_size=3, padding=1)
+        self.d32 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+
+        self.upconv4 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.d41 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
+        self.d42 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+
+        # Output layer
+        self.outconv = nn.Conv2d(64, n_class, kernel_size=1)
 
     def forward(self, x):
         # Encoder
-        e0 = self.enc_conv0(x)
-        e1 = self.pool0(e0)
-        
-        e1 = self.enc_conv1(e1)
-        e2 = self.pool1(e1)
-        
-        # Bottleneck
-        b = self.bottleneck_conv(e2)
+        xe11 = relu(self.e11(x))
+        xe12 = relu(self.e12(xe11))
+        xp1 = self.pool1(xe12)
+
+        xe21 = relu(self.e21(xp1))
+        xe22 = relu(self.e22(xe21))
+        xp2 = self.pool2(xe22)
+
+        xe31 = relu(self.e31(xp2))
+        xe32 = relu(self.e32(xe31))
+        xp3 = self.pool3(xe32)
+
+        xe41 = relu(self.e41(xp3))
+        xe42 = relu(self.e42(xe41))
+        xp4 = self.pool4(xe42)
+
+        xe51 = relu(self.e51(xp4))
+        xe52 = relu(self.e52(xe51))
         
         # Decoder
-        d1 = self.upconv1(b)
-        d1 = torch.cat((d1, e1), dim=1)
-        d1 = self.dec_conv1(d1)
-        
-        d0 = self.upconv0(d1)
-        d0 = torch.cat((d0, e0), dim=1)
-        d0 = self.dec_conv0(d0)
-        
-        # Classifier
-        out = self.classifier(d0)
+        xu1 = self.upconv1(xe52)
+        xu11 = torch.cat([xu1, xe42], dim=1)
+        xd11 = relu(self.d11(xu11))
+        xd12 = relu(self.d12(xd11))
+
+        xu2 = self.upconv2(xd12)
+        xu22 = torch.cat([xu2, xe32], dim=1)
+        xd21 = relu(self.d21(xu22))
+        xd22 = relu(self.d22(xd21))
+
+        xu3 = self.upconv3(xd22)
+        xu33 = torch.cat([xu3, xe22], dim=1)
+        xd31 = relu(self.d31(xu33))
+        xd32 = relu(self.d32(xd31))
+
+        xu4 = self.upconv4(xd32)
+        xu44 = torch.cat([xu4, xe12], dim=1)
+        xd41 = relu(self.d41(xu44))
+        xd42 = relu(self.d42(xd41))
+
+        # Output layer
+        out = self.outconv(xd42)
+
         return out
+
+
 
 # Check if CUDA is available and set the device
 device = torch.device("cuda" if torch.cuda.is_available() else "mps")
 
 # Initialize the model, move it to the current device, and print the summary
-model = UNet().to(device)
+model = UNet(n_class = 4).to(device)
 print(model)
 
 # Convert the numpy arrays to PyTorch tensors
@@ -194,6 +240,7 @@ print(model)
 # This changes the shape from (n_images, height, width) to (n_images, 1, height, width)
 images_tensor = torch.tensor(images_array_train[:, np.newaxis, ...]).float()
 ground_truths_tensor = torch.tensor(ground_truths_array_train).float()
+images_tensor.size()
 
 # Create a TensorDataset and DataLoader
 dataset = TensorDataset(images_tensor, ground_truths_tensor)
@@ -205,7 +252,7 @@ optimizer = optim.Adam(model.parameters(), lr=1e-4)
 criterion = nn.CrossEntropyLoss()  # Change the loss function to CrossEntropyLoss
 
 # Training loop
-num_epochs = 250
+num_epochs = 50
 for epoch in range(num_epochs):
     model.train()
     running_loss = 0.0
