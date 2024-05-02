@@ -142,3 +142,353 @@ print(f'Test Images array shape: {images_array_test.shape}')
 print(f'Test Ground truths array shape: {ground_truths_array_test.shape}')
 print(f'Class labels: {class_labels_test}', '\n', "Total Class Labels: ",len(class_labels_test))
 
+
+####################################################################################################
+
+####################################################################################################
+
+### Create and train a model ###
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class UNetWithClassifier(nn.Module):
+    def __init__(self, n_class, n_class_global):
+        super(UNetWithClassifier, self).__init__()
+        
+        # Encoder
+        self.e11 = nn.Conv2d(1, 64, kernel_size=3, padding=1)
+        self.e12 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.e21 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.e22 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.e31 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
+        self.e32 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.e41 = nn.Conv2d(256, 512, kernel_size=3, padding=1)
+        self.e42 = nn.Conv2d(512, 512, kernel_size=3, padding=1)
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.e51 = nn.Conv2d(512, 1024, kernel_size=3, padding=1)
+        self.e52 = nn.Conv2d(1024, 1024, kernel_size=3, padding=1)
+
+        # Decoder
+        self.upconv1 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.d11 = nn.Conv2d(1024, 512, kernel_size=3, padding=1)
+        self.d12 = nn.Conv2d(512, 512, kernel_size=3, padding=1)
+
+        self.upconv2 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.d21 = nn.Conv2d(512, 256, kernel_size=3, padding=1)
+        self.d22 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+
+        self.upconv3 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.d31 = nn.Conv2d(256, 128, kernel_size=3, padding=1)
+        self.d32 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+
+        self.upconv4 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.d41 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
+        self.d42 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+
+        # Output layers
+        self.outconv = nn.Conv2d(64, n_class, kernel_size=1)
+
+        # Classification head
+        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc1 = nn.Linear(1024, 128)
+        self.fc2 = nn.Linear(128, n_class_global)
+
+    def forward(self, x):
+        # Encoder
+        xe11 = F.relu(self.e11(x))
+        xe12 = F.relu(self.e12(xe11))
+        xp1 = self.pool1(xe12)
+
+        xe21 = F.relu(self.e21(xp1))
+        xe22 = F.relu(self.e22(xe21))
+        xp2 = self.pool2(xe22)
+
+        xe31 = F.relu(self.e31(xp2))
+        xe32 = F.relu(self.e32(xe31))
+        xp3 = self.pool3(xe32)
+
+        xe41 = F.relu(self.e41(xp3))
+        xe42 = F.relu(self.e42(xe41))
+        xp4 = self.pool4(xe42)
+
+        xe51 = F.relu(self.e51(xp4))
+        xe52 = F.relu(self.e52(xe51))
+        
+        # Decoder
+        xu1 = self.upconv1(xe52)
+        xu11 = torch.cat([xu1, xe42], dim=1)
+        xd11 = F.relu(self.d11(xu11))
+        xd12 = F.relu(self.d12(xd11))
+
+        xu2 = self.upconv2(xd12)
+        xu22 = torch.cat([xu2, xe32], dim=1)
+        xd21 = F.relu(self.d21(xu22))
+        xd22 = F.relu(self.d22(xd21))
+
+        xu3 = self.upconv3(xd22)
+        xu33 = torch.cat([xu3, xe22], dim=1)
+        xd31 = F.relu(self.d31(xu33))
+        xd32 = F.relu(self.d32(xd31))
+
+        xu4 = self.upconv4(xd32)
+        xu44 = torch.cat([xu4, xe12], dim=1)
+        xd41 = F.relu(self.d41(xu44))
+        xd42 = F.relu(self.d42(xd41))
+
+        # Segmentation output
+        seg_out = self.outconv(xd42)
+
+        # Classification output
+        x6 = self.global_pool(xe52)  # Use features from the deepest layer
+        x6 = x6.view(x6.size(0), -1)
+        x6 = F.relu(self.fc1(x6))
+        class_out = self.fc2(x6)
+
+        return seg_out, class_out
+
+
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset, random_split
+
+
+# Check if CUDA is available and set the device
+device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+
+# Initialize the model, move it to the current device, and print the summary
+model = UNetWithClassifier(n_class=4, n_class_global = 5).to(device)
+print(model)
+
+# Convert the numpy arrays to PyTorch tensors
+# Add a channel dimension with 'np.newaxis' before converting to tensor
+# This changes the shape from (n_images, height, width) to (n_images, 1, height, width)
+images_tensor = torch.tensor(images_array_train[:, np.newaxis, ...]).float()
+ground_truths_tensor = torch.tensor(ground_truths_array_train).float()
+# list of class labels
+class_labels_list = ['NOR', 'MINF', 'DCM', 'HCM', 'RV']
+# Create a mapping from class labels to integers
+label_to_int = {label: idx for idx, label in enumerate(sorted(set(class_labels_train)))}
+# Convert list of class labels to integers based on the mapping
+class_labels_int = [label_to_int[label] for label in class_labels_train]
+class_labels_tensor = torch.tensor(class_labels_int).long()  # Convert class labels to a tensor
+
+
+# Create a TensorDataset
+dataset = TensorDataset(images_tensor, ground_truths_tensor, class_labels_tensor)
+
+# Split the dataset into training and validation sets
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+# Create DataLoaders for training and validation datasets
+train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
+
+
+# Setup losses
+segmentation_criterion = nn.CrossEntropyLoss()
+classification_criterion = nn.CrossEntropyLoss()  # Assuming classification is also a categorical problem
+# Assuming 'model', 'train_loader', and 'val_loader' are defined
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
+
+# run model
+num_epochs = 50
+training_losses = []
+validation_losses = []
+
+for epoch in range(num_epochs):
+    model.train()
+    total_train_loss = 0
+
+    for images, masks, labels in train_loader:
+        images, masks, labels = images.to(device), masks.to(device), labels.to(device)
+        optimizer.zero_grad()
+        seg_outputs, class_outputs = model(images)
+        seg_loss = segmentation_criterion(seg_outputs, masks)
+        class_loss = classification_criterion(class_outputs, labels)
+        loss = seg_loss + class_loss
+        loss.backward()
+        optimizer.step()
+
+        total_train_loss += loss.item()
+
+    avg_train_loss = total_train_loss / len(train_loader)
+    training_losses.append(avg_train_loss)
+
+    # Validation phase
+    model.eval()
+    total_val_loss = 0
+    with torch.no_grad():
+        for images, masks, labels in val_loader:
+            images, masks, labels = images.to(device), masks.to(device), labels.to(device)
+            seg_outputs, class_outputs = model(images)
+            seg_loss = segmentation_criterion(seg_outputs, masks)
+            class_loss = classification_criterion(class_outputs, labels)
+            loss = seg_loss + class_loss
+            total_val_loss += loss.item()
+
+    avg_val_loss = total_val_loss / len(val_loader)
+    validation_losses.append(avg_val_loss)
+
+    print(f'Epoch {epoch+1}/{num_epochs}, Training Loss: {avg_train_loss}, Validation Loss: {avg_val_loss}')
+
+
+####################################################################################################
+
+####################################################################################################
+
+
+import matplotlib.pyplot as plt
+
+# plot the training and validation losses over epochs
+plt.figure(figsize=(10, 5))
+plt.plot(training_losses, label='Training Loss')
+plt.plot(validation_losses, label='Validation Loss')
+plt.title('Loss Curve')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+# plt.grid(True)
+plt.show()
+
+
+####################################################################################################
+
+####################################################################################################
+
+
+
+### Evaluate the model on the test set ###
+
+# Assuming test_images_array and test_ground_truths_array are your test data prepared in the same way as your training data
+test_images_tensor = torch.tensor(images_array_test[:, np.newaxis, ...]).float()
+test_ground_truths_tensor = torch.tensor(ground_truths_array_test).float()
+# Create a mapping from class labels to integers
+label_to_int = {label: idx for idx, label in enumerate(sorted(set(class_labels_test)))}
+# Convert list of class labels to integers based on the mapping
+class_labels_int = [label_to_int[label] for label in class_labels_test]
+class_labels_test_tensor = torch.tensor(class_labels_int).long()  # Convert class labels to a tensor
+
+
+# Create a TensorDataset and DataLoader for the test set
+test_dataset = TensorDataset(test_images_tensor, test_ground_truths_tensor, class_labels_test_tensor)
+test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
+
+
+# Convert outputs using softmax and get the predictions
+def multi_class_dice_coeff(preds, targets, num_classes, smooth=1.0):
+    dice = 0.0
+    for class_index in range(num_classes):
+        pred_inds = (preds == class_index).float()
+        target_inds = (targets == class_index).float()
+        intersection = (pred_inds * target_inds).sum()
+        union = pred_inds.sum() + target_inds.sum()
+        dice += (2. * intersection + smooth) / (union + smooth)
+    return dice / num_classes
+
+
+model.eval()  # Set the model to evaluation mode
+total_dice = 0.0
+all_preds = []
+all_labels = []
+
+with torch.no_grad():  # Disable gradient calculation
+    for images, masks, labels in test_loader:
+        images, masks, labels = images.to(device), masks.to(device), labels.to(device)
+        seg_outputs, class_outputs = model(images)
+        
+        # Segmentation metrics
+        probs = torch.softmax(seg_outputs, dim=1)
+        preds = torch.argmax(probs, dim=1)
+        dice_score = multi_class_dice_coeff(preds, masks, num_classes=4)
+        total_dice += dice_score.item()
+
+        # Classification metrics
+        class_probs = torch.softmax(class_outputs, dim=1)
+        class_preds = torch.argmax(class_probs, dim=1)
+        all_preds.extend(class_preds.cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
+
+average_dice = total_dice / len(test_loader)
+print(f'Average Dice Coefficient on the test set: {average_dice:.4f}')
+print(f'Accuracy on the test set: {(np.array(all_preds) == np.array(all_labels)).mean():.4f}')
+
+
+####################################################################################################
+
+####################################################################################################
+
+### Visualize the model predictions ###
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def plot_test_examples(loader, model, device, num_examples=3):
+    model.eval()  # Set the model to evaluation mode
+    with torch.no_grad():  # Disable gradient calculation
+        for images, true_masks, labels in loader:
+            # Move tensors to the device
+            images, true_masks = images.to(device), true_masks.to(device)
+            
+            # Forward pass to get outputs
+            outputs, class_outputs = model(images)
+            
+            # Convert outputs to probability scores and predictions
+            probs = torch.softmax(outputs, dim=1)
+            preds = torch.argmax(probs, dim=1)
+            
+            # Convert tensors to numpy arrays for plotting
+            images_np = images.cpu().numpy()
+            true_masks_np = true_masks.cpu().numpy()
+            preds_np = preds.cpu().numpy()
+
+            # Plotting the first 'num_examples' in the batch
+            for idx in range(min(num_examples, images_np.shape[0])):
+                plt.figure(figsize=(12, 4))
+                
+                plt.subplot(1, 3, 1)
+                plt.imshow(images_np[idx, 0], cmap='gray', interpolation='none')
+                plt.title('Original Image')
+                plt.axis('off')
+                
+                plt.subplot(1, 3, 2)
+                plt.imshow(true_masks_np[idx], cmap='jet', interpolation='none')
+                plt.title('Ground Truth Mask')
+                plt.axis('off')
+                
+                plt.subplot(1, 3, 3)
+                plt.imshow(preds_np[idx], cmap='jet', interpolation='none')
+                plt.title('Predicted Mask')
+                plt.axis('off')
+                
+                plt.show()
+            
+            if idx >= num_examples - 1:
+                break  # Stop after showing 'num_examples' examples
+
+# Usage: Assuming you have already defined 'test_loader', 'model', and 'device'
+plot_test_examples(test_loader, model, device, num_examples=2)
+
+
+# Compute the confusion matrix
+from sklearn.metrics import confusion_matrix
+conf_matrix = confusion_matrix(all_labels, all_preds)
+# Plotting the confusion matrix
+plt.figure(figsize=(10, 8))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_to_int.keys(), yticklabels=label_to_int.keys())
+plt.title('Confusion Matrix')
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.show()
