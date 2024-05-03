@@ -304,7 +304,7 @@ classification_criterion = nn.CrossEntropyLoss()  # Assuming classification is a
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 # run model
-num_epochs = 50
+num_epochs = 100
 training_losses = []
 validation_losses = []
 
