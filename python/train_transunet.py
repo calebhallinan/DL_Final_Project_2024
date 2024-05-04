@@ -1,16 +1,14 @@
 '''
-Run a simple CNN on the ACDC dataset
+Run a method to classify and segment images
 '''
 
 ####################################################################################################
 
 ####################################################################################################
 
-
 # Edit these variables to match your setup
 dataset_path_training = '/Users/calebhallinan/Desktop/jhu/classes/deep_learning/DL_Final_Project_2024/data/ACDC/training'
 dataset_path_testing = '/Users/calebhallinan/Desktop/jhu/classes/deep_learning/DL_Final_Project_2024/data/ACDC/testing'
-
 
 ### Import packages 
 
@@ -19,6 +17,8 @@ import nibabel as nib
 import numpy as np
 import re
 from skimage.transform import resize
+import configparser
+import pandas as pd
 
 
 ### Functions to load in the data ###
@@ -36,11 +36,17 @@ def get_sort_key(filepath):
     else:
         raise ValueError(f'Filename does not match expected pattern: {filepath}')
     
+    # Function to extract the patient number and sort by it
+def extract_patient_number(file_path):
+    match = re.search(r"patient(\d+)", file_path)
+    return int(match.group(1)) if match else None
+
 ### Read in training data ###
 
 # Lists to hold the file paths for images and ground truths
 image_file_paths_train = []
 ground_truth_file_paths_train = []
+class_file_paths_train = []
 
 # Walk through the directory and collect all relevant file paths
 for root, dirs, files in os.walk(dataset_path_training):
@@ -51,20 +57,31 @@ for root, dirs, files in os.walk(dataset_path_training):
                 ground_truth_file_paths_train.append(full_path)
             else:
                 image_file_paths_train.append(full_path)
+        if "Info" in file:
+            class_file_paths_train.append(os.path.join(root, file))
+
 
 # Sort the file paths to ensure alignment
 image_file_paths_train.sort(key=get_sort_key)
 ground_truth_file_paths_train.sort(key=get_sort_key)
+class_file_paths_train = sorted(class_file_paths_train, key=extract_patient_number)
 
 # Check to make sure each image has a corresponding ground truth
 assert len(image_file_paths_train) == len(ground_truth_file_paths_train)
 for img_path, gt_path in zip(image_file_paths_train, ground_truth_file_paths_train):
     assert get_sort_key(img_path) == get_sort_key(gt_path), "Mismatch between image and ground truth files"
 
+# Extract the class labels from the config files
+class_labels_train = []  
+for class_file in class_file_paths_train:
+        config = pd.read_csv(class_file, sep=':', header=None)
+        class_labels_train.append(config[config[0] == "Group"][1][2].strip())
+        class_labels_train.append(config[config[0] == "Group"][1][2].strip()) # doing twice bc there are 2 files per patient
+
 # Load the images and ground truths into numpy arrays
 # using 2 index bc not all 0 index had a gt
-images_train = [resize(nib.load(path).get_fdata()[:,:,2], (224,224), order=0, preserve_range=True, anti_aliasing=False) for path in image_file_paths_train]
-ground_truths_train = [resize(nib.load(path).get_fdata()[:,:,2], (224,224), order=0, preserve_range=True, anti_aliasing=False) for path in ground_truth_file_paths_train]
+images_train = [resize(nib.load(path).get_fdata()[:,:,2], (224,224)) for path in image_file_paths_train]
+ground_truths_train = [resize(nib.load(path).get_fdata()[:,:,2], (224,224)) for path in ground_truth_file_paths_train]
 
 # Stack the arrays into 4D numpy arrays
 images_array_train = np.stack(images_train)
@@ -72,12 +89,15 @@ ground_truths_array_train = np.stack(ground_truths_train)
 
 print(f'Training Images array shape: {images_array_train.shape}')
 print(f'Training Ground truths array shape: {ground_truths_array_train.shape}')
+print(f'Class labels: {class_labels_train}', '\n', "Total Class Labels: ",len(class_labels_train))
+
 
 ### Read in testing data ###
 
 # Lists to hold the file paths for images and ground truths
 image_file_paths_test = []
 ground_truth_file_paths_test = []
+class_file_paths_test = []
 
 # Walk through the directory and collect all relevant file paths
 for root, dirs, files in os.walk(dataset_path_testing):
@@ -88,20 +108,31 @@ for root, dirs, files in os.walk(dataset_path_testing):
                 ground_truth_file_paths_test.append(full_path)
             else:
                 image_file_paths_test.append(full_path)
+        if "Info" in file:
+            class_file_paths_test.append(os.path.join(root, file))
 
 # Sort the file paths to ensure alignment
 image_file_paths_test.sort(key=get_sort_key)
 ground_truth_file_paths_test.sort(key=get_sort_key)
+class_file_paths_test = sorted(class_file_paths_test, key=extract_patient_number)
 
 # Check to make sure each image has a corresponding ground truth
 assert len(image_file_paths_test) == len(ground_truth_file_paths_test)
 for img_path, gt_path in zip(image_file_paths_test, ground_truth_file_paths_test):
     assert get_sort_key(img_path) == get_sort_key(gt_path), "Mismatch between image and ground truth files"
 
+# Extract the class labels from the config files
+class_labels_test = []
+for class_file in class_file_paths_test:
+        config = pd.read_csv(class_file, sep=':', header=None)
+        class_labels_test.append(config[config[0] == "Group"][1][2].strip())
+        class_labels_test.append(config[config[0] == "Group"][1][2].strip())
+
+    
 # Load the images and ground truths into numpy arrays
 # using 2 index bc not all 0 index had a gt
-images_test = [resize(nib.load(path).get_fdata()[:,:,2], (224,224), order=0, preserve_range=True, anti_aliasing=False) for path in image_file_paths_test]
-ground_truths_test = [resize(nib.load(path).get_fdata()[:,:,2], (224,224), order=0, preserve_range=True, anti_aliasing=False) for path in ground_truth_file_paths_test]
+images_test = [resize(nib.load(path).get_fdata()[:,:,2], (224,224)) for path in image_file_paths_test]
+ground_truths_test = [resize(nib.load(path).get_fdata()[:,:,2], (224,224)) for path in ground_truth_file_paths_test]
 
 # Stack the arrays into 4D numpy arrays
 images_array_test = np.stack(images_test)
@@ -109,140 +140,156 @@ ground_truths_array_test = np.stack(ground_truths_test)
 
 print(f'Test Images array shape: {images_array_test.shape}')
 print(f'Test Ground truths array shape: {ground_truths_array_test.shape}')
+print(f'Class labels: {class_labels_test}', '\n', "Total Class Labels: ",len(class_labels_test))
 
 
 ####################################################################################################
 
 ####################################################################################################
 
-### Create and train an original UNET ###
+### Create and train a model ###
 
 import torch
 import torch.nn as nn
-from torchvision import models
-from torch.nn.functional import relu
-from torch.utils.data import DataLoader, TensorDataset, random_split
-import torch.optim as optim
+import torch.nn.functional as F
+from einops import rearrange
 
-
-
-class UNet(nn.Module):
-    def __init__(self, n_class):
+class Attention(nn.Module):
+    def __init__(self, dim, num_heads):
         super().__init__()
-        
-        # Encoder
-        # In the encoder, convolutional layers with the Conv2d function are used to extract features from the input image. 
-        # Each block in the encoder consists of two convolutional layers followed by a max-pooling layer, with the exception of the last block which does not include a max-pooling layer.
-        # -------
-        # input: 572x572x3
-        self.e11 = nn.Conv2d(1, 64, kernel_size=3, padding=1) # output: 570x570x64 # CH: changed input channels to 1
-        self.e12 = nn.Conv2d(64, 64, kernel_size=3, padding=1) # output: 568x568x64
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 284x284x64
-
-        # input: 284x284x64
-        self.e21 = nn.Conv2d(64, 128, kernel_size=3, padding=1) # output: 282x282x128
-        self.e22 = nn.Conv2d(128, 128, kernel_size=3, padding=1) # output: 280x280x128
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 140x140x128
-
-        # input: 140x140x128
-        self.e31 = nn.Conv2d(128, 256, kernel_size=3, padding=1) # output: 138x138x256
-        self.e32 = nn.Conv2d(256, 256, kernel_size=3, padding=1) # output: 136x136x256
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 68x68x256
-
-        # input: 68x68x256
-        self.e41 = nn.Conv2d(256, 512, kernel_size=3, padding=1) # output: 66x66x512
-        self.e42 = nn.Conv2d(512, 512, kernel_size=3, padding=1) # output: 64x64x512
-        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2) # output: 32x32x512
-
-        # input: 32x32x512
-        self.e51 = nn.Conv2d(512, 1024, kernel_size=3, padding=1) # output: 30x30x1024
-        self.e52 = nn.Conv2d(1024, 1024, kernel_size=3, padding=1) # output: 28x28x1024
-
-
-        # Decoder
-        self.upconv1 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
-        self.d11 = nn.Conv2d(1024, 512, kernel_size=3, padding=1)
-        self.d12 = nn.Conv2d(512, 512, kernel_size=3, padding=1)
-
-        self.upconv2 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
-        self.d21 = nn.Conv2d(512, 256, kernel_size=3, padding=1)
-        self.d22 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
-
-        self.upconv3 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
-        self.d31 = nn.Conv2d(256, 128, kernel_size=3, padding=1)
-        self.d32 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-
-        self.upconv4 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        self.d41 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
-        self.d42 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-
-        # Output layer
-        self.outconv = nn.Conv2d(64, n_class, kernel_size=1)
+        self.num_heads = num_heads
+        self.scale = dim ** -0.5
+        self.query = nn.Linear(dim, dim, bias=False)
+        self.key = nn.Linear(dim, dim, bias=False)
+        self.value = nn.Linear(dim, dim, bias=False)
+        self.combine = nn.Linear(dim, dim)
 
     def forward(self, x):
-        # Encoder
-        xe11 = relu(self.e11(x))
-        xe12 = relu(self.e12(xe11))
-        xp1 = self.pool1(xe12)
+        b, n, _, h = *x.shape, self.num_heads
+        queries = rearrange(self.query(x), 'b n (h d) -> b h n d', h=h)
+        keys = rearrange(self.key(x), 'b n (h d) -> b h n d', h=h)
+        values = rearrange(self.value(x), 'b n (h d) -> b h n d', h=h)
 
-        xe21 = relu(self.e21(xp1))
-        xe22 = relu(self.e22(xe21))
-        xp2 = self.pool2(xe22)
+        attention = torch.einsum('bhid,bhjd->bhij', queries, keys) * self.scale
+        attention = F.softmax(attention, dim=-1)
 
-        xe31 = relu(self.e31(xp2))
-        xe32 = relu(self.e32(xe31))
-        xp3 = self.pool3(xe32)
+        out = torch.einsum('bhij,bhjd->bhid', attention, values)
+        out = rearrange(out, 'b h n d -> b n (h d)')
+        return self.combine(out)
 
-        xe41 = relu(self.e41(xp3))
-        xe42 = relu(self.e42(xe41))
-        xp4 = self.pool4(xe42)
+class PreNorm(nn.Module):
+    def __init__(self, dim, fn):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
+    def forward(self, x, **kwargs):
+        return self.fn(self.norm(x), **kwargs)
 
-        xe51 = relu(self.e51(xp4))
-        xe52 = relu(self.e52(xe51))
+class FeedForward(nn.Module):
+    def __init__(self, dim, hidden_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, dim),
+        )
+    def forward(self, x):
+        return self.net(x)
+
+class TransUNet(nn.Module):
+    def __init__(
+        self,
+        *,
+        image_size,
+        patch_size,
+        num_classes,
+        dim,
+        depth,
+        heads,
+        mlp_dim,
+        channels=3
+    ):
+        super().__init__()
+        assert image_size % patch_size == 0, 'Image dimensions must be divisible by the patch size.'
+        num_patches = (image_size // patch_size) ** 2
+        patch_dim = channels * patch_size ** 2
+
+        self.patch_size = patch_size
+
+        self.patch_embedding = nn.Conv2d(channels, dim, kernel_size=patch_size, stride=patch_size)
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
+        self.transformer = nn.ModuleList([
+            nn.ModuleList([
+                PreNorm(dim, Attention(dim, heads)),
+                PreNorm(dim, FeedForward(dim, mlp_dim))
+            ]) for _ in range(depth)
+        ])
+
+        self.to_cls_token = nn.Identity()
+
+        self.mlp_head = nn.Sequential(
+            nn.LayerNorm(dim),
+            nn.Linear(dim, num_classes)
+        )
+
+    def forward(self, img):
+        p = self.patch_size
+
+        x = self.patch_embedding(img).flatten(2).transpose(1, 2)
+        b, n, _ = x.shape
+
+        cls_tokens = self.cls_token.expand(b, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x += self.pos_embedding[:, :(n + 1)]
         
-        # Decoder
-        xu1 = self.upconv1(xe52)
-        xu11 = torch.cat([xu1, xe42], dim=1)
-        xd11 = relu(self.d11(xu11))
-        xd12 = relu(self.d12(xd11))
+        for attn, ff in self.transformer:
+            x = attn(x) + x
+            x = ff(x) + x
 
-        xu2 = self.upconv2(xd12)
-        xu22 = torch.cat([xu2, xe32], dim=1)
-        xd21 = relu(self.d21(xu22))
-        xd22 = relu(self.d22(xd21))
+        x = self.to_cls_token(x[:, 0])
+        return self.mlp_head(x)
 
-        xu3 = self.upconv3(xd22)
-        xu33 = torch.cat([xu3, xe22], dim=1)
-        xd31 = relu(self.d31(xu33))
-        xd32 = relu(self.d32(xd31))
 
-        xu4 = self.upconv4(xd32)
-        xu44 = torch.cat([xu4, xe12], dim=1)
-        xd41 = relu(self.d41(xu44))
-        xd42 = relu(self.d42(xd41))
 
-        # Output layer
-        out = self.outconv(xd42)
 
-        return out
 
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset, random_split
 
 
 # Check if CUDA is available and set the device
 device = torch.device("cuda" if torch.cuda.is_available() else "mps")
 
 # Initialize the model, move it to the current device, and print the summary
-model = UNet(n_class=4).to(device)
+model = TransUNet(
+    image_size=224,
+    patch_size=16,
+    num_classes=5,
+    dim=256,
+    depth=12,
+    heads=8,
+    mlp_dim=512,
+    channels=1).to(device)
 print(model)
 
 # Convert the numpy arrays to PyTorch tensors
 # Add a channel dimension with 'np.newaxis' before converting to tensor
 # This changes the shape from (n_images, height, width) to (n_images, 1, height, width)
 images_tensor = torch.tensor(images_array_train[:, np.newaxis, ...]).float()
-ground_truths_tensor = torch.tensor(ground_truths_array_train).float()
+ground_truths_tensor = torch.tensor(ground_truths_array_train[:, np.newaxis, ...]).float()
+# list of class labels
+class_labels_list = ['NOR', 'MINF', 'DCM', 'HCM', 'RV']
+# Create a mapping from class labels to integers
+label_to_int = {label: idx for idx, label in enumerate(sorted(set(class_labels_train)))}
+# Convert list of class labels to integers based on the mapping
+class_labels_int = [label_to_int[label] for label in class_labels_train]
+class_labels_tensor = torch.tensor(class_labels_int).long()  # Convert class labels to a tensor
 
 # Create a TensorDataset
-dataset = TensorDataset(images_tensor, ground_truths_tensor)
+dataset = TensorDataset(images_tensor, class_labels_tensor)
 
 # Split the dataset into training and validation sets
 train_size = int(0.8 * len(dataset))
@@ -253,15 +300,24 @@ train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
 
-# Define the optimizer and the loss function
+
+# Setup losses
+segmentation_criterion = nn.CrossEntropyLoss()
+classification_criterion = nn.CrossEntropyLoss()  # Assuming classification is also a categorical problem
+# Assuming 'model', 'train_loader', and 'val_loader' are defined
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 criterion = nn.CrossEntropyLoss()  # Using CrossEntropyLoss suitable for multi-class segmentation
 
-# Example usage of DataLoader in a training loop could be adjusted as shown in previous messages to handle training and validation phases.
+
+
+class_indices = torch.argmax(torch.tensor(ground_truths_array_train), dim=1)
+# Convert class indices to a tensor
+ground_truths_tensor = class_indices.long()
+ground_truths_tensor.size()
 
 
 # Training loop
-num_epochs = 1
+num_epochs = 50
 training_losses = []
 validation_losses = []
 
@@ -294,7 +350,8 @@ for epoch in range(num_epochs):
     
     print(f'Epoch {epoch+1}/{num_epochs}, Training Loss: {avg_train_loss}, Validation Loss: {avg_val_loss}')
 
-
+images.size()
+outputs.size()
 ####################################################################################################
 
 ####################################################################################################
@@ -319,14 +376,21 @@ plt.show()
 ####################################################################################################
 
 
+
 ### Evaluate the model on the test set ###
 
 # Assuming test_images_array and test_ground_truths_array are your test data prepared in the same way as your training data
 test_images_tensor = torch.tensor(images_array_test[:, np.newaxis, ...]).float()
 test_ground_truths_tensor = torch.tensor(ground_truths_array_test).float()
+# Create a mapping from class labels to integers
+label_to_int = {label: idx for idx, label in enumerate(sorted(set(class_labels_test)))}
+# Convert list of class labels to integers based on the mapping
+class_labels_int = [label_to_int[label] for label in class_labels_test]
+class_labels_test_tensor = torch.tensor(class_labels_int).long()  # Convert class labels to a tensor
+
 
 # Create a TensorDataset and DataLoader for the test set
-test_dataset = TensorDataset(test_images_tensor, test_ground_truths_tensor)
+test_dataset = TensorDataset(test_images_tensor, class_labels_test_tensor)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
 
@@ -344,21 +408,29 @@ def multi_class_dice_coeff(preds, targets, num_classes, smooth=1.0):
 
 model.eval()  # Set the model to evaluation mode
 total_dice = 0.0
+all_preds = []
+all_labels = []
+
 with torch.no_grad():  # Disable gradient calculation
-    for images, masks in test_loader:
-        images, masks = images.to(device), masks.to(device)
-        outputs = model(images)
-        probs = torch.softmax(outputs, dim=1)
-        preds = torch.argmax(probs, dim=1)
+    for images, labels in test_loader:
+        images, labels = images.to(device), labels.to(device)
+        class_outputs = model(images)
         
-        # Calculate the Dice coefficient for each class and average them
-        dice_score = multi_class_dice_coeff(preds, masks, num_classes=4)
-        total_dice += dice_score.item()
+        # Segmentation metrics
+        # probs = torch.softmax(seg_outputs, dim=1)
+        # preds = torch.argmax(probs, dim=1)
+        # dice_score = multi_class_dice_coeff(preds, masks, num_classes=4)
+        # total_dice += dice_score.item()
+
+        # Classification metrics
+        class_probs = torch.softmax(class_outputs, dim=1)
+        class_preds = torch.argmax(class_probs, dim=1)
+        all_preds.extend(class_preds.cpu().numpy())
+        all_labels.extend(labels.cpu().numpy())
 
 average_dice = total_dice / len(test_loader)
-print(f'Average Dice Coefficient on the test set: {average_dice:.4f}')
-
-
+# print(f'Average Dice Coefficient on the test set: {average_dice:.4f}')
+print(f'Accuracy on the test set: {(np.array(all_preds) == np.array(all_labels)).mean():.4f}')
 
 
 ####################################################################################################
@@ -368,16 +440,17 @@ print(f'Average Dice Coefficient on the test set: {average_dice:.4f}')
 ### Visualize the model predictions ###
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 def plot_test_examples(loader, model, device, num_examples=3):
     model.eval()  # Set the model to evaluation mode
     with torch.no_grad():  # Disable gradient calculation
-        for images, true_masks in loader:
+        for images, true_masks, labels in loader:
             # Move tensors to the device
             images, true_masks = images.to(device), true_masks.to(device)
             
             # Forward pass to get outputs
-            outputs = model(images)
+            outputs, class_outputs = model(images)
             
             # Convert outputs to probability scores and predictions
             probs = torch.softmax(outputs, dim=1)
@@ -416,5 +489,14 @@ def plot_test_examples(loader, model, device, num_examples=3):
 plot_test_examples(test_loader, model, device, num_examples=2)
 
 
-
-
+# Compute the confusion matrix
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+conf_matrix = confusion_matrix(all_labels, all_preds)
+# Plotting the confusion matrix
+plt.figure(figsize=(10, 8))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=label_to_int.keys(), yticklabels=label_to_int.keys())
+plt.title('Confusion Matrix')
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+plt.show()
