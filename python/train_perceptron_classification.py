@@ -19,6 +19,12 @@ import re
 from skimage.transform import resize
 import configparser
 import pandas as pd
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, TensorDataset, random_split
+import torch.nn.functional as F
 
 
 ### Functions to load in the data ###
@@ -202,11 +208,6 @@ print(f'Test accuracy: {accuracy_test}')
 
 ####################################################################################################
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, TensorDataset, random_split
 
 # set the seed for reproducibility
 torch.manual_seed(0)
@@ -222,16 +223,36 @@ class Perceptron(nn.Module):
         out = self.fc(x)
         return out
 
+
+# Define multi-layer perceptron model
+class MLP(nn.Module):
+    def __init__(self, input_size, hidden_size, num_classes):
+        super(MLP, self).__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size*2)
+        self.fc2 = nn.Linear(hidden_size*2, hidden_size)
+        self.fc3 = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        out = self.fc1(x)
+        out = F.relu(out)
+        out = self.fc2(out)
+        out = F.relu(out)
+        out = self.fc3(out)
+        return out
+
+
 # Constants for the model
 input_size = 224 * 224 
 num_classes = 5  
+hidden_size = 10000
 
 # Create the model instance
 model = Perceptron(input_size, num_classes)
+# model = MLP(input_size, hidden_size, num_classes)
 
 # Loss and Optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.01)
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Load data
 transform = transforms.Compose([
@@ -255,7 +276,7 @@ val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
 import matplotlib.pyplot as plt
 
 # Function to train the model
-def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=50):
+def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=15):
     train_losses = []
     val_losses = []
 
