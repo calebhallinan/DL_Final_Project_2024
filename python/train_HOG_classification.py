@@ -165,6 +165,30 @@ class_labels_int = [label_to_int[label] for label in class_labels_train]
 class_labels_tensor = torch.tensor(class_labels_int).long()  # Convert class labels to a tensor
 
 
+####################################################################################################
+
+####################################################################################################
+
+# extact HOG features
+from skimage.feature import hog
+from skimage import exposure
+
+# Function to extract HOG features from an image
+def extract_hog_features(image):
+    # Extract HOG features and ensure the features are in the range [0, 1]
+    features = hog(image)
+    return features
+
+# Extract HOG features from the images
+hog_features_train = np.array([extract_hog_features(image) for image in images_train])
+hog_features_test = np.array([extract_hog_features(image) for image in images_test])
+
+print(f'HOG Features shape: {hog_features_train.shape}')
+
+# Convert the numpy arrays to PyTorch tensors
+hog_features_tensor = torch.tensor(hog_features_train).float()
+hog_features_test_tensor = torch.tensor(hog_features_test).float()
+
 
 ####################################################################################################
 
@@ -176,12 +200,12 @@ from sklearn.linear_model import Perceptron
 from sklearn.metrics import accuracy_score
 
 # Flatten the images and ground truths
-X_train = images_array_train.reshape(images_array_train.shape[0], -1)
+X_train = hog_features_train
 y_train = np.array(class_labels_train)
 X_train.shape, y_train.shape
 
 # Flatten the images and ground truths
-X_test = images_array_test.reshape(images_array_test.shape[0], -1)
+X_test = hog_features_test
 y_test = np.array(class_labels_test)
 X_test.shape, y_test.shape
 
@@ -202,6 +226,55 @@ accuracy_test = accuracy_score(y_test, y_pred_test)
 print(f'Training accuracy: {accuracy_train}')
 print(f'Test accuracy: {accuracy_test}')
 
+
+####################################################################################################
+
+####################################################################################################
+
+# perform knn classification on HOG features
+from sklearn.neighbors import KNeighborsClassifier
+
+# Create the KNN model
+knn = KNeighborsClassifier(n_neighbors=5)
+
+# Train the model
+knn.fit(X_train, y_train)
+
+# Make predictions
+y_pred_train = knn.predict(X_train)
+y_pred_test = knn.predict(X_test)
+
+# Calculate accuracy
+accuracy_train = accuracy_score(y_train, y_pred_train)
+accuracy_test = accuracy_score(y_test, y_pred_test)
+
+print(f'Training accuracy: {accuracy_train}')
+print(f'Test accuracy: {accuracy_test}')
+
+
+####################################################################################################
+
+####################################################################################################
+
+# perform SVM classification on HOG features
+from sklearn.svm import SVC
+
+# Create the SVM model with rbf kernel
+svm = SVC(kernel='rbf')
+
+# Train the model
+svm.fit(X_train, y_train)
+
+# Make predictions
+y_pred_train = svm.predict(X_train)
+y_pred_test = svm.predict(X_test)
+
+# Calculate accuracy
+accuracy_train = accuracy_score(y_train, y_pred_train)
+accuracy_test = accuracy_score(y_test, y_pred_test)
+
+print(f'Training accuracy: {accuracy_train}')
+print(f'Test accuracy: {accuracy_test}')
 
 
 ####################################################################################################
@@ -242,13 +315,13 @@ class MLP(nn.Module):
 
 
 # Constants for the model
-input_size = 224 * 224 
+input_size = 54756
 num_classes = 5  
-hidden_size = 10000
+hidden_size = 1000
 
 # Create the model instance
-# model = Perceptron(input_size, num_classes)
-model = MLP(input_size, hidden_size, num_classes)
+model = Perceptron(input_size, num_classes)
+# model = MLP(input_size, hidden_size, num_classes)
 
 # Loss and Optimizer
 criterion = nn.CrossEntropyLoss()
@@ -261,7 +334,7 @@ transform = transforms.Compose([
 ])
 
 # Create a TensorDataset
-dataset = TensorDataset(images_tensor, class_labels_tensor)
+dataset = TensorDataset(hog_features_tensor, class_labels_tensor)
 
 # Split the dataset into training and validation sets
 train_size = int(0.8 * len(dataset))
@@ -286,7 +359,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         total_train_loss = 0
         for images, labels in train_loader:
             # Flatten images
-            images = images.view(-1, 224*224)
+            # images = images.view(-1, 224*224)
             
             # Forward pass
             outputs = model(images)
@@ -308,7 +381,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
         total_val_loss = 0
         with torch.no_grad():
             for images, labels in val_loader:
-                images = images.view(-1, 224*224)
+                # images = images.view(-1, 224*224)
                 outputs = model(images)
                 loss = criterion(outputs, labels)
                 total_val_loss += loss.item()
@@ -358,7 +431,7 @@ label_to_int = {label: i for i, label in enumerate(np.unique(class_labels_train)
 
 
 # Create a TensorDataset and DataLoader for the test set
-test_dataset = TensorDataset(test_images_tensor, class_labels_test_tensor)
+test_dataset = TensorDataset(hog_features_test_tensor, class_labels_test_tensor)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
 
@@ -378,7 +451,7 @@ def evaluate_model(model, test_loader, num_classes):
 
     with torch.no_grad():
         for images, labels in test_loader:
-            images = images.view(-1, 224*224)  # Flatten the images
+            # images = images.view(-1, 224*224)  # Flatten the images
             outputs = model(images)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)

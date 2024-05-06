@@ -1,0 +1,11 @@
+@article{miller2013quantification, 
+  title={Quantification of left ventricular indices from SSFP cine imaging: impact of real-world variability in analysis methodology and utility of geometric modeling}, 
+  author={Miller, Christopher A and Jordan, Peter and Borg, Alex and Argyle, Rachel and Clark, David and Pearce, Keith and Schmitt, Matthias}, 
+  journal={Journal of Magnetic Resonance Imaging}, 
+  volume={37}, 
+  number={5}, 
+  pages={1213--1222}, 
+  year={2013}, 
+  publisher={Wiley Online Library} 
+} 
+ 
