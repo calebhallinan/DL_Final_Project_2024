@@ -149,7 +149,7 @@ class UNet(nn.Module):
         self.bottleneck_conv = ConvBlock(32, 64)
         
         # Decoder
-        self.upconv1 = nn..(64, 32, kernel_size=2, stride=2)  # 56 -> 112
+        self.upconv1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)  # 56 -> 112
         self.dec_conv1 = ConvBlock(64, 32)
         self.upconv0 = nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2)  # 112 -> 224
         self.dec_conv0 = ConvBlock(32, 16)
